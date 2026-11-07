@@ -1,0 +1,5 @@
+pm_api_url          = "https://192.168.42.2:8006/api2/json" # API Proxmox
+pm_api_token_id     = "terraform-user@pve!terraform-token" # API Token ID
+pm_api_token_secret = "your-actual-secret-uuid-here" # API Secret
+target_node         = "pve" # Target Node
+clone_templatevm    = "amazonlinuxvm-tmp"
