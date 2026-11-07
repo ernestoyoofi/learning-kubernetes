@@ -23,7 +23,7 @@ Copy the image URL and download it to your Proxmox server. For example, open the
 
 Create a VM using the downloaded image and configure it for your environment. For this example, use the `q35` machine type and add an EFI disk, as the Amazon Linux image uses UEFI. Configure the CPU and other settings as needed, and make sure the VM is configured to work with cloud-init. Once the VM is ready, convert it to a template. The following recording shows an example of creating a VM template:
 
-https://github.com/user-attachments/assets/f1373eee-99fe-4942-b4f5-818c37db0a2d
+https://github.com/user-attachments/assets/b719f901-d499-41ee-aef8-d59d9b5df305
 
 The template's Proxmox name must match the `clone_templatevm` value in `terraform.tfvars`.
 
