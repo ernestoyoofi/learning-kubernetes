@@ -70,3 +70,110 @@ terraform apply tfplan
 Terraform displays the `vm_ips` output after a successful apply. Review the plan carefully before applying: it creates VMs on your Proxmox environment. The saved plan file may contain sensitive values, so do not commit it to source control.
 
 To preview the changes Terraform would make later, run `terraform plan` again. To remove the VMs managed by this configuration, run `terraform destroy` from this directory and confirm the proposed changes before proceeding.
+
+## Set Up NFS Storage
+
+This section uses an additional 80 GB SSD partition (`/dev/sdb2`) on the Proxmox 8.4 host as an NFS share for the Amazon Linux 2023 VMs.
+
+> [!WARNING]
+> Formatting `/dev/sdb2` erases its contents. Confirm that it is the intended 80 GB partition before running `mkfs`.
+
+### Configure the Proxmox NFS Server
+
+Run these commands in the Proxmox shell. First, verify the disk and partition:
+
+```shell
+lsblk -o NAME,SIZE,FSTYPE,UUID,MOUNTPOINTS
+```
+
+Confirm that `/dev/sdb2` is the additional 80 GB partition and that it does not contain data you need. Format it as ext4:
+
+```shell
+mkfs.ext4 /dev/sdb2
+```
+
+Create a mount point and get the partition UUID:
+
+```shell
+mkdir -p /srv/nfs/kube-storage
+blkid /dev/sdb2
+```
+
+Add the UUID reported by `blkid` to `/etc/fstab` so the partition mounts after a Proxmox reboot:
+
+```fstab
+UUID=<sdb2-uuid> /srv/nfs/kube-storage ext4 defaults 0 2
+```
+
+Replace `<sdb2-uuid>` with the actual UUID, then mount and verify it:
+
+```shell
+mount -a
+findmnt /srv/nfs/kube-storage
+```
+
+Install and enable the NFS server:
+
+```shell
+apt update
+apt install nfs-kernel-server
+systemctl enable --now nfs-kernel-server
+```
+
+Export the storage to the VM network. The example below uses `192.168.30.0/24`; replace it with the subnet containing your Amazon Linux VMs. Keep the export restricted to trusted clients.
+
+Add this line to `/etc/exports`:
+
+```exports
+/srv/nfs/kube-storage 192.168.30.0/24(rw,sync,no_subtree_check,root_squash)
+```
+
+Apply and verify the export:
+
+```shell
+exportfs -rav
+exportfs -v
+```
+
+Allow inbound TCP port `2049` from the VM subnet in the Proxmox firewall and any other firewall between the VMs and the host. This guide uses NFSv4.2, which does not require opening the additional NFSv3 RPC ports.
+
+For a basic write test as `ec2-user`, make the directory writable by that account. Check its numeric IDs on a VM with `id ec2-user`, then use those IDs on Proxmox (Amazon Linux's default `ec2-user` is usually `1000:1000`):
+
+```shell
+chown 1000:1000 /srv/nfs/kube-storage
+chmod 0755 /srv/nfs/kube-storage
+```
+
+Adjust ownership and permissions to match the users or Kubernetes workloads that will use the share. With `root_squash` enabled, client root does not have root privileges on the NFS server.
+
+### Mount the Share on Amazon Linux 2023
+
+Run these commands on each Amazon Linux 2023 VM. Replace `<proxmox-ip>` with the Proxmox host's reachable IP address:
+
+```shell
+sudo dnf install -y nfs-utils
+sudo mkdir -p /mnt/kube-storage
+sudo mount -t nfs -o nfsvers=4.2 <proxmox-ip>:/srv/nfs/kube-storage /mnt/kube-storage
+```
+
+Verify the mount and test writing as `ec2-user`:
+
+```shell
+findmnt /mnt/kube-storage
+touch /mnt/kube-storage/nfs-test
+rm /mnt/kube-storage/nfs-test
+```
+
+To mount the share automatically after reboot, add this line to `/etc/fstab` on each VM:
+
+```fstab
+<proxmox-ip>:/srv/nfs/kube-storage /mnt/kube-storage nfs4 nfsvers=4.2,_netdev,nofail,hard,timeo=600,retrans=2 0 0
+```
+
+Replace `<proxmox-ip>` with the same Proxmox IP address. `_netdev` marks this as a network mount; `nofail` lets the VM finish booting if the NFS server is temporarily unavailable. Test the entry before rebooting:
+
+```shell
+sudo umount /mnt/kube-storage
+sudo mount -a
+findmnt /mnt/kube-storage
+```
