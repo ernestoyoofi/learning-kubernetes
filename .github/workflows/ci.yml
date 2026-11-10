@@ -5,7 +5,7 @@ on:
     branches: "main"
     paths:
       - 'app-api/**'
-      - '.github/workflows/docker-build.yml'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 jobs:
@@ -41,9 +41,9 @@ jobs:
         working-directory: app-api
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-  # ─── Job 2: Build (amd64 only, for testing) ───────────────────────────────
-  build:
-    name: Build Docker Image (amd64)
+  # ─── Job 2: Build AMD64 (for Integration Test) ───────────────────────────
+  build-test-image:
+    name: Build Test Image (amd64)
     runs-on: ubuntu-latest
     needs: lint
 
@@ -69,7 +69,7 @@ jobs:
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-api-image
+          name: app-api-test-image
           path: /tmp/app-api.tar
           retention-days: 1
 
@@ -77,16 +77,16 @@ jobs:
   integration-test:
     name: Integration Test (CRUD)
     runs-on: ubuntu-latest
-    needs: build
+    needs: build-test-image
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download image artifact
+      - name: Download test image artifact
         uses: actions/download-artifact@v4
         with:
-          name: app-api-image
+          name: app-api-test-image
           path: /tmp
 
       - name: Load Docker image
@@ -213,11 +213,19 @@ jobs:
         working-directory: app-api
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
-  # ─── Job 4: Push multi-arch to GHCR ──────────────────────────────────────
-  push:
-    name: Push Multi-Arch to GHCR
-    runs-on: ubuntu-latest
+  # ─── Job 4: Parallel Native Builds (by-digest) ───────────────────────────
+  build-matrix:
+    name: Build Native (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
     needs: integration-test
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux/amd64
+          - os: ubuntu-24.04-arm
+            platform: linux/arm64
 
     permissions:
       contents: read
@@ -226,9 +234,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -240,13 +245,70 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push multi-arch image
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ./app-api
           file: ./app-api/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ghcr.io/ernestoyoofi/learning-kubernetes:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/ernestoyoofi/learning-kubernetes,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ strategy.job-index }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ─── Job 5: Merge Multi-Arch Manifest ─────────────────────────────────────
+  push-manifest:
+    name: Merge and Push Manifest (Multi-Arch)
+    runs-on: ubuntu-latest
+    needs: build-matrix
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifest list
+        working-directory: /tmp/digests
+        run: |
+          IMAGE="ghcr.io/ernestoyoofi/learning-kubernetes:latest"
+          DIGESTS=""
+          for f in *; do
+            DIGESTS="$DIGESTS ghcr.io/ernestoyoofi/learning-kubernetes@sha256:$f"
+          done
+          echo "Merging digests:$DIGESTS"
+          docker buildx imagetools create -t $IMAGE $DIGESTS
+
+      - name: Inspect manifest
+        run: |
+          docker buildx imagetools inspect ghcr.io/ernestoyoofi/learning-kubernetes:latest
