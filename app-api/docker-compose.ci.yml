@@ -1,0 +1,4 @@
+services:
+  app-api:
+    image: app-api:ci-test
+    build: !reset null
