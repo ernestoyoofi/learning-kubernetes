@@ -307,6 +307,7 @@ dependencies = [
  "dotenvy",
  "env_logger",
  "log",
+ "rand 0.8.8",
  "redis",
  "serde",
  "serde_json",

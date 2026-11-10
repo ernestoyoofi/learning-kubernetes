@@ -3,9 +3,10 @@ mod handlers;
 mod models;
 
 use actix_cors::Cors;
-use actix_web::{middleware::Logger, web, App, HttpServer};
+use actix_web::{error, middleware::Logger, web, App, HttpResponse, HttpServer};
 use dotenvy::dotenv;
 use log::info;
+use models::ErrorResponse;
 use std::env;
 
 #[actix_web::main]
@@ -38,10 +39,24 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         let cors = Cors::permissive();
 
+        let json_cfg = web::JsonConfig::default()
+            .limit(1024 * 1024)
+            .error_handler(|err, _req| {
+                error::InternalError::from_response(
+                    err.to_string(),
+                    HttpResponse::BadRequest().json(ErrorResponse::new(
+                        400,
+                        format!("Invalid JSON payload: {}", err),
+                    )),
+                )
+                .into()
+            });
+
         App::new()
             .wrap(Logger::default())
             .wrap(cors)
             .app_data(web::Data::new(app_state.clone()))
+            .app_data(json_cfg)
             .route("/api/healty", web::get().to(handlers::health_check))
             .service(
                 web::scope("/api/v1")
@@ -50,8 +65,10 @@ async fn main() -> std::io::Result<()> {
                     .route("/note/{id}", web::get().to(handlers::get_note_by_id))
                     .route("/note/{id}", web::put().to(handlers::replace_note))
                     .route("/note/{id}", web::patch().to(handlers::update_note))
-                    .route("/note/{id}", web::delete().to(handlers::delete_note)),
+                    .route("/note/{id}", web::delete().to(handlers::delete_note))
+                    .default_service(web::to(handlers::not_found_handler)),
             )
+            .default_service(web::to(handlers::not_found_handler))
     })
     .bind((host.as_str(), port))?
     .run()
