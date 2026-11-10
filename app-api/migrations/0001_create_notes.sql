@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS notes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
     color_front VARCHAR(50) NOT NULL DEFAULT '#000000',
@@ -10,4 +10,4 @@ CREATE TABLE IF NOT EXISTS notes (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_id_desc ON notes (id DESC);

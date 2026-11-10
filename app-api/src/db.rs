@@ -17,8 +17,10 @@ pub struct AppState {
 pub async fn init_db_pool() -> DbPool {
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     PgPoolOptions::new()
-        .max_connections(20)
-        .acquire_timeout(Duration::from_secs(5))
+        .max_connections(30)
+        .min_connections(5)
+        .acquire_timeout(Duration::from_secs(3))
+        .idle_timeout(Duration::from_secs(300))
         .connect(&database_url)
         .await
         .expect("Failed to connect to Postgres database")
@@ -90,12 +92,22 @@ pub async fn set_cached_string(
     }
 }
 
-pub async fn invalidate_cache(redis_pool: &Option<RedisPool>, keys: &[&str]) {
+pub async fn invalidate_cache(redis_pool: &Option<RedisPool>, keys: &[&str], match_prefix: Option<&str>) {
     if let Some(mut conn) = get_redis_conn(redis_pool).await {
         for key in keys {
             let res: Result<(), _> = conn.del(*key).await;
             if let Err(err) = res {
                 error!("Redis DEL error for key {}: {}", key, err);
+            }
+        }
+
+        if let Some(prefix) = match_prefix {
+            let pattern = format!("{}*", prefix);
+            match redis::cmd("KEYS").arg(&pattern).query_async::<Vec<String>>(&mut conn).await {
+                Ok(matched_keys) if !matched_keys.is_empty() => {
+                    let _: Result<(), _> = conn.del(&matched_keys).await;
+                }
+                _ => {}
             }
         }
     }

@@ -1,14 +1,16 @@
 use crate::db::{get_cached_string, invalidate_cache, set_cached_string, AppState};
 use crate::models::{
-    random_colors, CreateNotePayload, DataResponse, DeleteResponse, ErrorResponse, MutationResponse,
-    Note, NoteSummary, ReplaceNotePayload, UpdateNotePayload,
+    random_colors, CreateNotePayload, DataResponse, DeleteResponse, ErrorResponse, ListNotesQuery,
+    MutationResponse, Note, NoteSummary, PaginatedNotesResponse, ReplaceNotePayload,
+    UpdateNotePayload,
 };
 use actix_web::{web, HttpResponse, Responder};
 use log::error;
 use uuid::Uuid;
 use validator::Validate;
 
-const CACHE_KEY_LIST: &str = "cache:notes:list";
+const CACHE_PREFIX_LIST: &str = "cache:notes:list:";
+const CACHE_PREFIX_NOTE: &str = "cache:note:";
 const CACHE_TTL_SECS: u64 = 60;
 
 fn format_validation_errors(err: validator::ValidationErrors) -> String {
@@ -63,26 +65,88 @@ pub async fn not_found_handler() -> impl Responder {
     HttpResponse::NotFound().json(ErrorResponse::new(404, "Requested resource not found"))
 }
 
-pub async fn list_notes(data: web::Data<AppState>) -> impl Responder {
-    if let Some(cached) = get_cached_string(&data.redis, CACHE_KEY_LIST).await {
-        if let Ok(cached_notes) = serde_json::from_str::<Vec<NoteSummary>>(&cached) {
-            return HttpResponse::Ok().json(DataResponse { data: cached_notes });
-        }
+pub async fn list_notes(
+    data: web::Data<AppState>,
+    query: web::Query<ListNotesQuery>,
+) -> impl Responder {
+    let limit = query.limit.unwrap_or(50).clamp(1, 100);
+    let cache_key = format!(
+        "{}{}:{}",
+        CACHE_PREFIX_LIST,
+        query.next_id.map(|id| id.to_string()).unwrap_or_else(|| "first".to_string()),
+        limit
+    );
+
+    if let Some(cached_json) = get_cached_string(&data.redis, &cache_key).await {
+        return HttpResponse::Ok()
+            .content_type("application/json")
+            .body(cached_json);
     }
 
-    let result = sqlx::query_as::<_, Note>(
-        "SELECT id, title, content, color_front, color_back, created_at, updated_at FROM notes ORDER BY created_at DESC"
-    )
-    .fetch_all(&data.db)
-    .await;
+    let fetch_limit = limit + 1;
 
-    match result {
-        Ok(notes) => {
-            let summaries: Vec<NoteSummary> = notes.into_iter().map(|n| n.to_summary(120)).collect();
-            if let Ok(json_str) = serde_json::to_string(&summaries) {
-                set_cached_string(&data.redis, CACHE_KEY_LIST, &json_str, CACHE_TTL_SECS).await;
+    let query_result = match query.next_id {
+        Some(cursor_id) => {
+            sqlx::query_as::<_, NoteSummary>(
+                r#"
+                SELECT id, title, 
+                       CASE WHEN LENGTH(content) > 120 THEN SUBSTRING(content FROM 1 FOR 120) || '...' ELSE content END AS content_preview,
+                       color_front, color_back, created_at, updated_at
+                FROM notes
+                WHERE id < $1
+                ORDER BY id DESC
+                LIMIT $2
+                "#
+            )
+            .bind(cursor_id)
+            .bind(fetch_limit)
+            .fetch_all(&data.db)
+            .await
+        }
+        None => {
+            sqlx::query_as::<_, NoteSummary>(
+                r#"
+                SELECT id, title, 
+                       CASE WHEN LENGTH(content) > 120 THEN SUBSTRING(content FROM 1 FOR 120) || '...' ELSE content END AS content_preview,
+                       color_front, color_back, created_at, updated_at
+                FROM notes
+                ORDER BY id DESC
+                LIMIT $1
+                "#
+            )
+            .bind(fetch_limit)
+            .fetch_all(&data.db)
+            .await
+        }
+    };
+
+    match query_result {
+        Ok(mut summaries) => {
+            let is_next = summaries.len() as i64 > limit;
+            if is_next {
+                summaries.truncate(limit as usize);
             }
-            HttpResponse::Ok().json(DataResponse { data: summaries })
+
+            let next_id = if is_next {
+                summaries.last().map(|n| n.id)
+            } else {
+                None
+            };
+
+            let response_body = PaginatedNotesResponse {
+                data: summaries,
+                is_next,
+                next_id,
+            };
+
+            if let Ok(json_str) = serde_json::to_string(&response_body) {
+                set_cached_string(&data.redis, &cache_key, &json_str, CACHE_TTL_SECS).await;
+                HttpResponse::Ok()
+                    .content_type("application/json")
+                    .body(json_str)
+            } else {
+                HttpResponse::Ok().json(response_body)
+            }
         }
         Err(err) => {
             error!("Failed to fetch notes: {}", err);
@@ -93,12 +157,12 @@ pub async fn list_notes(data: web::Data<AppState>) -> impl Responder {
 
 pub async fn get_note_by_id(data: web::Data<AppState>, path: web::Path<Uuid>) -> impl Responder {
     let note_id = path.into_inner();
-    let cache_key = format!("cache:note:{}", note_id);
+    let cache_key = format!("{}{}", CACHE_PREFIX_NOTE, note_id);
 
-    if let Some(cached) = get_cached_string(&data.redis, &cache_key).await {
-        if let Ok(cached_note) = serde_json::from_str::<Note>(&cached) {
-            return HttpResponse::Ok().json(DataResponse { data: cached_note });
-        }
+    if let Some(cached_json) = get_cached_string(&data.redis, &cache_key).await {
+        return HttpResponse::Ok()
+            .content_type("application/json")
+            .body(cached_json);
     }
 
     let result = sqlx::query_as::<_, Note>(
@@ -110,10 +174,15 @@ pub async fn get_note_by_id(data: web::Data<AppState>, path: web::Path<Uuid>) ->
 
     match result {
         Ok(Some(note)) => {
-            if let Ok(json_str) = serde_json::to_string(&note) {
+            let wrapped = DataResponse { data: note };
+            if let Ok(json_str) = serde_json::to_string(&wrapped) {
                 set_cached_string(&data.redis, &cache_key, &json_str, CACHE_TTL_SECS).await;
+                HttpResponse::Ok()
+                    .content_type("application/json")
+                    .body(json_str)
+            } else {
+                HttpResponse::Ok().json(wrapped)
             }
-            HttpResponse::Ok().json(DataResponse { data: note })
         }
         Ok(None) => HttpResponse::NotFound().json(ErrorResponse::new(404, format!("Note with id {} not found", note_id))),
         Err(err) => {
@@ -136,14 +205,16 @@ pub async fn create_note(
     let (def_front, def_back) = random_colors();
     let color_front = payload.color_front.clone().unwrap_or_else(|| def_front.to_string());
     let color_back = payload.color_back.clone().unwrap_or_else(|| def_back.to_string());
+    let note_id = Uuid::now_v7();
 
     let result = sqlx::query_as::<_, Note>(
         r#"
-        INSERT INTO notes (title, content, color_front, color_back)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO notes (id, title, content, color_front, color_back)
+        VALUES ($1, $2, $3, $4, $5)
         RETURNING id, title, content, color_front, color_back, created_at, updated_at
         "#
     )
+    .bind(note_id)
     .bind(&payload.title)
     .bind(&payload.content)
     .bind(&color_front)
@@ -153,7 +224,7 @@ pub async fn create_note(
 
     match result {
         Ok(note) => {
-            invalidate_cache(&data.redis, &[CACHE_KEY_LIST]).await;
+            invalidate_cache(&data.redis, &[], Some(CACHE_PREFIX_LIST)).await;
             HttpResponse::Created().json(MutationResponse {
                 status: 201,
                 success: true,
@@ -203,8 +274,8 @@ pub async fn replace_note(
 
     match result {
         Ok(Some(updated_note)) => {
-            let note_cache_key = format!("cache:note:{}", note_id);
-            invalidate_cache(&data.redis, &[CACHE_KEY_LIST, &note_cache_key]).await;
+            let note_cache_key = format!("{}{}", CACHE_PREFIX_NOTE, note_id);
+            invalidate_cache(&data.redis, &[&note_cache_key], Some(CACHE_PREFIX_LIST)).await;
             HttpResponse::Ok().json(MutationResponse {
                 status: 200,
                 success: true,
@@ -272,8 +343,8 @@ pub async fn update_note(
 
     match result {
         Ok(Some(updated_note)) => {
-            let note_cache_key = format!("cache:note:{}", note_id);
-            invalidate_cache(&data.redis, &[CACHE_KEY_LIST, &note_cache_key]).await;
+            let note_cache_key = format!("{}{}", CACHE_PREFIX_NOTE, note_id);
+            invalidate_cache(&data.redis, &[&note_cache_key], Some(CACHE_PREFIX_LIST)).await;
             HttpResponse::Ok().json(MutationResponse {
                 status: 200,
                 success: true,
@@ -300,8 +371,8 @@ pub async fn delete_note(data: web::Data<AppState>, path: web::Path<Uuid>) -> im
 
     match result {
         Ok(query_result) if query_result.rows_affected() > 0 => {
-            let note_cache_key = format!("cache:note:{}", note_id);
-            invalidate_cache(&data.redis, &[CACHE_KEY_LIST, &note_cache_key]).await;
+            let note_cache_key = format!("{}{}", CACHE_PREFIX_NOTE, note_id);
+            invalidate_cache(&data.redis, &[&note_cache_key], Some(CACHE_PREFIX_LIST)).await;
             HttpResponse::Ok().json(DeleteResponse {
                 status: 200,
                 success: true,

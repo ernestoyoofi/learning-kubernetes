@@ -6,16 +6,16 @@ use uuid::Uuid;
 use validator::Validate;
 
 const COLOR_PALETTES: &[(&str, &str)] = &[
-    ("#1f2937", "#fef08a"), // dark gray / yellow
-    ("#1e293b", "#bfdbfe"), // slate / light blue
-    ("#064e3b", "#bbf7d0"), // dark green / mint
-    ("#701a75", "#fbcfe8"), // dark purple / pink
-    ("#7c2d12", "#fed7aa"), // dark orange / peach
-    ("#1e1b4b", "#e0e7ff"), // indigo / soft violet
-    ("#312e81", "#c7d2fe"), // blue-indigo / soft blue
-    ("#134e4a", "#99f6e4"), // teal / soft teal
-    ("#18181b", "#f4f4f5"), // zinc dark / off-white
-    ("#7f1d1d", "#fecaca"), // dark red / soft rose
+    ("#1f2937", "#fef08a"),
+    ("#1e293b", "#bfdbfe"),
+    ("#064e3b", "#bbf7d0"),
+    ("#701a75", "#fbcfe8"),
+    ("#7c2d12", "#fed7aa"),
+    ("#1e1b4b", "#e0e7ff"),
+    ("#312e81", "#c7d2fe"),
+    ("#134e4a", "#99f6e4"),
+    ("#18181b", "#f4f4f5"),
+    ("#7f1d1d", "#fecaca"),
 ];
 
 pub fn random_colors() -> (&'static str, &'static str) {
@@ -35,7 +35,7 @@ pub struct Note {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct NoteSummary {
     pub id: Uuid,
     pub title: String,
@@ -47,6 +47,7 @@ pub struct NoteSummary {
 }
 
 impl Note {
+    #[allow(dead_code)]
     pub fn to_summary(&self, max_length: usize) -> NoteSummary {
         let content_preview = if self.content.chars().count() > max_length {
             let truncated: String = self.content.chars().take(max_length).collect();
@@ -65,6 +66,19 @@ impl Note {
             updated_at: self.updated_at,
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListNotesQuery {
+    pub next_id: Option<Uuid>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PaginatedNotesResponse {
+    pub data: Vec<NoteSummary>,
+    pub is_next: bool,
+    pub next_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
