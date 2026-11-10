@@ -83,10 +83,18 @@ pub struct PaginatedNotesResponse {
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct CreateNotePayload {
-    #[validate(length(min = 1, max = 80, message = "Title must be between 1 and 80 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 80,
+        message = "Title must be between 1 and 80 characters"
+    ))]
     pub title: String,
 
-    #[validate(length(min = 1, max = 512, message = "Content must be between 1 and 512 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 512,
+        message = "Content must be between 1 and 512 characters"
+    ))]
     pub content: String,
 
     #[validate(length(min = 1, max = 50, message = "color_front cannot exceed 50 characters"))]
@@ -100,17 +108,33 @@ impl CreateNotePayload {
     pub fn trim_and_clean(&mut self) {
         self.title = self.title.trim().to_string();
         self.content = self.content.trim().to_string();
-        self.color_front = self.color_front.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-        self.color_back = self.color_back.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        self.color_front = self
+            .color_front
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        self.color_back = self
+            .color_back
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
     }
 }
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct ReplaceNotePayload {
-    #[validate(length(min = 1, max = 80, message = "Title must be between 1 and 80 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 80,
+        message = "Title must be between 1 and 80 characters"
+    ))]
     pub title: String,
 
-    #[validate(length(min = 1, max = 512, message = "Content must be between 1 and 512 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 512,
+        message = "Content must be between 1 and 512 characters"
+    ))]
     pub content: String,
 
     #[validate(length(min = 1, max = 50, message = "color_front cannot exceed 50 characters"))]
@@ -124,17 +148,33 @@ impl ReplaceNotePayload {
     pub fn trim_and_clean(&mut self) {
         self.title = self.title.trim().to_string();
         self.content = self.content.trim().to_string();
-        self.color_front = self.color_front.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-        self.color_back = self.color_back.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        self.color_front = self
+            .color_front
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        self.color_back = self
+            .color_back
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
     }
 }
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct UpdateNotePayload {
-    #[validate(length(min = 1, max = 80, message = "Title must be between 1 and 80 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 80,
+        message = "Title must be between 1 and 80 characters"
+    ))]
     pub title: Option<String>,
 
-    #[validate(length(min = 1, max = 512, message = "Content must be between 1 and 512 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 512,
+        message = "Content must be between 1 and 512 characters"
+    ))]
     pub content: Option<String>,
 
     #[validate(length(min = 1, max = 50, message = "color_front cannot exceed 50 characters"))]
@@ -146,10 +186,26 @@ pub struct UpdateNotePayload {
 
 impl UpdateNotePayload {
     pub fn trim_and_clean(&mut self) {
-        self.title = self.title.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-        self.content = self.content.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-        self.color_front = self.color_front.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-        self.color_back = self.color_back.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        self.title = self
+            .title
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        self.content = self
+            .content
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        self.color_front = self
+            .color_front
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        self.color_back = self
+            .color_back
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
     }
 }
 

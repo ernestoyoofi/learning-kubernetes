@@ -41,7 +41,10 @@ pub fn init_redis_pool() -> Option<RedisPool> {
             match cfg.create_pool(Some(Runtime::Tokio1)) {
                 Ok(pool) => Some(pool),
                 Err(err) => {
-                    warn!("Failed to create Redis pool: {}. Running without cache.", err);
+                    warn!(
+                        "Failed to create Redis pool: {}. Running without cache.",
+                        err
+                    );
                     None
                 }
             }
@@ -92,7 +95,11 @@ pub async fn set_cached_string(
     }
 }
 
-pub async fn invalidate_cache(redis_pool: &Option<RedisPool>, keys: &[&str], match_prefix: Option<&str>) {
+pub async fn invalidate_cache(
+    redis_pool: &Option<RedisPool>,
+    keys: &[&str],
+    match_prefix: Option<&str>,
+) {
     if let Some(mut conn) = get_redis_conn(redis_pool).await {
         for key in keys {
             let res: Result<(), _> = conn.del(*key).await;
@@ -103,7 +110,11 @@ pub async fn invalidate_cache(redis_pool: &Option<RedisPool>, keys: &[&str], mat
 
         if let Some(prefix) = match_prefix {
             let pattern = format!("{}*", prefix);
-            match redis::cmd("KEYS").arg(&pattern).query_async::<Vec<String>>(&mut conn).await {
+            match redis::cmd("KEYS")
+                .arg(&pattern)
+                .query_async::<Vec<String>>(&mut conn)
+                .await
+            {
                 Ok(matched_keys) if !matched_keys.is_empty() => {
                     let _: Result<(), _> = conn.del(&matched_keys).await;
                 }

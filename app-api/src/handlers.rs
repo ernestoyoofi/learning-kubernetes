@@ -32,14 +32,14 @@ fn format_validation_errors(err: validator::ValidationErrors) -> String {
 }
 
 pub async fn health_check(data: web::Data<AppState>) -> impl Responder {
-    let db_ok = sqlx::query("SELECT 1")
-        .execute(&data.db)
-        .await
-        .is_ok();
+    let db_ok = sqlx::query("SELECT 1").execute(&data.db).await.is_ok();
 
     let redis_ok = if let Some(ref pool) = data.redis {
         match pool.get().await {
-            Ok(mut conn) => redis::cmd("PING").query_async::<String>(&mut conn).await.is_ok(),
+            Ok(mut conn) => redis::cmd("PING")
+                .query_async::<String>(&mut conn)
+                .await
+                .is_ok(),
             Err(_) => false,
         }
     } else {
@@ -73,7 +73,10 @@ pub async fn list_notes(
     let cache_key = format!(
         "{}{}:{}",
         CACHE_PREFIX_LIST,
-        query.next_id.map(|id| id.to_string()).unwrap_or_else(|| "first".to_string()),
+        query
+            .next_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "first".to_string()),
         limit
     );
 
@@ -150,7 +153,8 @@ pub async fn list_notes(
         }
         Err(err) => {
             error!("Failed to fetch notes: {}", err);
-            HttpResponse::InternalServerError().json(ErrorResponse::new(500, "Failed to retrieve notes"))
+            HttpResponse::InternalServerError()
+                .json(ErrorResponse::new(500, "Failed to retrieve notes"))
         }
     }
 }
@@ -184,10 +188,14 @@ pub async fn get_note_by_id(data: web::Data<AppState>, path: web::Path<Uuid>) ->
                 HttpResponse::Ok().json(wrapped)
             }
         }
-        Ok(None) => HttpResponse::NotFound().json(ErrorResponse::new(404, format!("Note with id {} not found", note_id))),
+        Ok(None) => HttpResponse::NotFound().json(ErrorResponse::new(
+            404,
+            format!("Note with id {} not found", note_id),
+        )),
         Err(err) => {
             error!("Failed to fetch note {}: {}", note_id, err);
-            HttpResponse::InternalServerError().json(ErrorResponse::new(500, "Failed to retrieve note"))
+            HttpResponse::InternalServerError()
+                .json(ErrorResponse::new(500, "Failed to retrieve note"))
         }
     }
 }
@@ -199,12 +207,19 @@ pub async fn create_note(
     payload.trim_and_clean();
 
     if let Err(err) = payload.validate() {
-        return HttpResponse::BadRequest().json(ErrorResponse::new(400, format_validation_errors(err)));
+        return HttpResponse::BadRequest()
+            .json(ErrorResponse::new(400, format_validation_errors(err)));
     }
 
     let (def_front, def_back) = random_colors();
-    let color_front = payload.color_front.clone().unwrap_or_else(|| def_front.to_string());
-    let color_back = payload.color_back.clone().unwrap_or_else(|| def_back.to_string());
+    let color_front = payload
+        .color_front
+        .clone()
+        .unwrap_or_else(|| def_front.to_string());
+    let color_back = payload
+        .color_back
+        .clone()
+        .unwrap_or_else(|| def_back.to_string());
     let note_id = Uuid::now_v7();
 
     let result = sqlx::query_as::<_, Note>(
@@ -212,7 +227,7 @@ pub async fn create_note(
         INSERT INTO notes (id, title, content, color_front, color_back)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING id, title, content, color_front, color_back, created_at, updated_at
-        "#
+        "#,
     )
     .bind(note_id)
     .bind(&payload.title)
@@ -235,7 +250,8 @@ pub async fn create_note(
         }
         Err(err) => {
             error!("Failed to create note: {}", err);
-            HttpResponse::InternalServerError().json(ErrorResponse::new(500, "Failed to create note"))
+            HttpResponse::InternalServerError()
+                .json(ErrorResponse::new(500, "Failed to create note"))
         }
     }
 }
@@ -248,12 +264,19 @@ pub async fn replace_note(
     payload.trim_and_clean();
 
     if let Err(err) = payload.validate() {
-        return HttpResponse::BadRequest().json(ErrorResponse::new(400, format_validation_errors(err)));
+        return HttpResponse::BadRequest()
+            .json(ErrorResponse::new(400, format_validation_errors(err)));
     }
 
     let (def_front, def_back) = random_colors();
-    let color_front = payload.color_front.clone().unwrap_or_else(|| def_front.to_string());
-    let color_back = payload.color_back.clone().unwrap_or_else(|| def_back.to_string());
+    let color_front = payload
+        .color_front
+        .clone()
+        .unwrap_or_else(|| def_front.to_string());
+    let color_back = payload
+        .color_back
+        .clone()
+        .unwrap_or_else(|| def_back.to_string());
 
     let note_id = path.into_inner();
     let result = sqlx::query_as::<_, Note>(
@@ -284,10 +307,14 @@ pub async fn replace_note(
                 data: updated_note,
             })
         }
-        Ok(None) => HttpResponse::NotFound().json(ErrorResponse::new(404, format!("Note with id {} not found", note_id))),
+        Ok(None) => HttpResponse::NotFound().json(ErrorResponse::new(
+            404,
+            format!("Note with id {} not found", note_id),
+        )),
         Err(err) => {
             error!("Failed to update note {}: {}", note_id, err);
-            HttpResponse::InternalServerError().json(ErrorResponse::new(500, "Failed to update note"))
+            HttpResponse::InternalServerError()
+                .json(ErrorResponse::new(500, "Failed to update note"))
         }
     }
 }
@@ -300,7 +327,8 @@ pub async fn update_note(
     payload.trim_and_clean();
 
     if let Err(err) = payload.validate() {
-        return HttpResponse::BadRequest().json(ErrorResponse::new(400, format_validation_errors(err)));
+        return HttpResponse::BadRequest()
+            .json(ErrorResponse::new(400, format_validation_errors(err)));
     }
 
     let note_id = path.into_inner();
@@ -322,7 +350,10 @@ pub async fn update_note(
 
     let title = payload.title.as_ref().unwrap_or(&existing.title);
     let content = payload.content.as_ref().unwrap_or(&existing.content);
-    let color_front = payload.color_front.as_ref().unwrap_or(&existing.color_front);
+    let color_front = payload
+        .color_front
+        .as_ref()
+        .unwrap_or(&existing.color_front);
     let color_back = payload.color_back.as_ref().unwrap_or(&existing.color_back);
 
     let result = sqlx::query_as::<_, Note>(
@@ -353,10 +384,14 @@ pub async fn update_note(
                 data: updated_note,
             })
         }
-        Ok(None) => HttpResponse::NotFound().json(ErrorResponse::new(404, format!("Note with id {} not found", note_id))),
+        Ok(None) => HttpResponse::NotFound().json(ErrorResponse::new(
+            404,
+            format!("Note with id {} not found", note_id),
+        )),
         Err(err) => {
             error!("Failed to patch note {}: {}", note_id, err);
-            HttpResponse::InternalServerError().json(ErrorResponse::new(500, "Failed to update note"))
+            HttpResponse::InternalServerError()
+                .json(ErrorResponse::new(500, "Failed to update note"))
         }
     }
 }
@@ -379,10 +414,14 @@ pub async fn delete_note(data: web::Data<AppState>, path: web::Path<Uuid>) -> im
                 message: "Note deleted successfully".to_string(),
             })
         }
-        Ok(_) => HttpResponse::NotFound().json(ErrorResponse::new(404, format!("Note with id {} not found", note_id))),
+        Ok(_) => HttpResponse::NotFound().json(ErrorResponse::new(
+            404,
+            format!("Note with id {} not found", note_id),
+        )),
         Err(err) => {
             error!("Failed to delete note {}: {}", note_id, err);
-            HttpResponse::InternalServerError().json(ErrorResponse::new(500, "Failed to delete note"))
+            HttpResponse::InternalServerError()
+                .json(ErrorResponse::new(500, "Failed to delete note"))
         }
     }
 }
