@@ -1,6 +1,55 @@
+# Node Module
 node_modules
-terraform.tfvars
+
+# Terraform Variable
+*.tfvars
+*.tfvars*
+!terraform.tfvars.example
+
+# Terraform State
+.tfstate
+*.tfstate
+*.tfstate*
+*tfstate*
+.terraform.lock.hcl
+/*/.terraform
+
+# Don't Push
 *.env
 *.log
 *log
 log
+
+# Build targets and binaries
+target/
+target/debug/
+target/release/
+**/target/
+**/*.rs.bk
+
+# Git metadata
+.git/
+.gitignore
+
+# Environment and local configurations
+.env
+.env.*
+.env.local
+!.env.example
+
+# Documentation & docker files
+README.md
+docker-compose.yml
+docker-compose.override.yml
+
+# IDE / Editor configuration
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Temporary and log files
+*.log
+.DS_Store
+Thumbs.db

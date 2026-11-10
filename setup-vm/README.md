@@ -25,6 +25,9 @@ Create a VM using the downloaded image and configure it for your environment. Fo
 
 https://github.com/user-attachments/assets/b719f901-d499-41ee-aef8-d59d9b5df305
 
+> [!NOTE]
+> If your Proxmox storage uses an SSD, you can check the **SSD Emulation** and **Discard** boxes, provided you are using a SATA/NVMe/M.2 SSD.
+
 The template's Proxmox name must match the `clone_templatevm` value in `terraform.tfvars`.
 
 ## Prepare the Terraform Configuration

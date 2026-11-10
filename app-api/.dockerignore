@@ -1,0 +1,30 @@
+# Build targets and binaries
+target/
+target/debug/
+target/release/
+
+# Git metadata
+.git/
+.gitignore
+
+# Environment and local configurations
+.env
+.env.*
+.env.local
+!.env.example
+
+# Documentation & docker files
+README.md
+docker-compose.yml
+docker-compose.override.yml
+
+# IDE / Editor configuration
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary and log files
+*.log
+.DS_Store
+Thumbs.db
